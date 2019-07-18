@@ -41,6 +41,8 @@ class Protocol_2016(Protocol):
         self.STATION_BLUE_1 = 0x03
         self.STATION_BLUE_2 = 0x04
         self.STATION_BLUE_3 = 0x05
+
+        self.JOYSTICK_HEADER = 0x0c
         
 
     def parse_control_code(self, control_code):
@@ -85,6 +87,41 @@ class Protocol_2016(Protocol):
             return ("BLUE", 2)
         elif station_code == self.STATION_BLUE_3:
             return ("BLUE", 3)
+
+    def parse_joy_data(self, data):
+        joy_list = []
+        while len(data) > 0:
+            joy_size = data[0]
+            if data[1] is not self.JOYSTICK_HEADER:
+                raise ValueError("Invalid joystick packet")
+            joy_axes_data = data[2:]
+            joy_num_axes = joy_axes_data[0]
+            joy_axes_values = [(-1*(x&0x80) + (x&0x7F))/0x7F for x in joy_axes_data[1:joy_num_axes+1]]
+
+            joy_button_data = joy_axes_data[joy_num_axes+1:]
+            joy_num_buttons = joy_button_data[0]
+            joy_button_flags = (joy_button_data[1] << 8) + joy_button_data[2]
+
+            joy_button_values = [False] * joy_num_buttons
+            for i in range(joy_num_buttons):
+                joy_button_values[i] = int(math.pow(2, i)) & joy_button_flags > 0
+
+            joy_hat_data = joy_button_data[3:]
+            joy_num_hats = joy_hat_data[0]
+            joy_hat_values = [0] * joy_num_hats
+            for i in range(joy_num_hats):
+                joy_hat_values[i] = (joy_hat_data[1 + 2*i] << 8) + joy_hat_data[2 + 2*i]
+
+
+            assert(joy_size == 2 + 3 + (1 + len(joy_axes_values)) + (1 + 2 * len(joy_hat_values)))
+
+            data = data[joy_size:]
+
+            joy_list.append({"axes":joy_axes_values, "buttons":joy_button_values, "hats":joy_hat_values})
+
+        return joy_list
+
+
     
     def parse_DS_packet(self, data):
         packet_id = (data[0] << 8) | data[1]
@@ -106,15 +143,16 @@ class Protocol_2016(Protocol):
 
         self.packet_id = packet_id
 
+        joy_data = []
+
         if len(extradata) > 0:
             if self.did_request_time:
                 #self.parse_time_data(extradata)
                 pass
             else:
-                #self.parse_joy_data(extradata)
-                pass
+                joy_data = self.parse_joy_data(extradata)
 
-        return (control_data, request, station_data)
+        return (control_data, request, station_data, joy_data)
     
     def generate_control_code(self, robot_state):
         if robot_state.emergency_stopped:

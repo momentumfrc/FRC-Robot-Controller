@@ -23,7 +23,9 @@ class Communicator:
         ds_packet =  self.protocol.parse_DS_packet(data)
         if ds_packet is None:
             return
-        control_data, request, station_data = ds_packet
+        control_data, request, station_data, joy_data = ds_packet
+
+        print(joy_data[0]["axes"])
 
         self.robot_state.update_controldata(control_data)
         self.robot_state.update_stationdata(station_data)
