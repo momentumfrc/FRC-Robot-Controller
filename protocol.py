@@ -1,3 +1,5 @@
+import math
+
 class Protocol:
 
     def __init__(self):
@@ -11,6 +13,9 @@ class Protocol_2016(Protocol):
     def __init__(self):
         super().__init__()
 
+        self.did_request_time = False
+        self.packet_id = None
+
         self.PACKET_HEADER = 0x01
 
         self.MODE_MASK = 0x03
@@ -21,11 +26,14 @@ class Protocol_2016(Protocol):
         self.ENABLED = 0x40
         self.FMS_ATTACHED = 0x08
         self.E_STOP = 0x80
+        self.ROBOT_CODE = 0x20
 
         self.REQUEST_REBOOT = 0x08
         self.REQUEST_NORMAL = 0x80
         self.REQUEST_CONNECT = 0x00
         self.REQUEST_RESTARTCODE = 0x04
+
+        self.REQUEST_TIMEDATA = 0x01
 
         self.STATION_RED_1 = 0x00
         self.STATION_RED_2 = 0x01
@@ -78,7 +86,7 @@ class Protocol_2016(Protocol):
         elif station_code == self.STATION_BLUE_3:
             return ("BLUE", 3)
     
-    def parse_packet(self, data):
+    def parse_DS_packet(self, data):
         packet_id = (data[0] << 8) | data[1]
         header = data[2]
         control_code = data[3]
@@ -94,10 +102,69 @@ class Protocol_2016(Protocol):
 
         control_data = self.parse_control_code(control_code)
         request = self.parse_request_code(request_code)
-        station = self.parse_station_code(station_code)
+        station_data = self.parse_station_code(station_code)
 
         self.packet_id = packet_id
-        print(control_data, request, station)
+
+        if len(extradata) > 0:
+            if self.did_request_time:
+                #self.parse_time_data(extradata)
+                pass
+            else:
+                #self.parse_joy_data(extradata)
+                pass
+
+        return (control_data, request, station_data)
+    
+    def generate_control_code(self, robot_state):
+        if robot_state.emergency_stopped:
+            return self.E_STOP
+        else:
+            return 0x00
+    
+    def generate_status_code(self, robot_state):
+        if robot_state.robot_code_running:
+            return self.ROBOT_CODE
+        else:
+            return 0x00
+    
+    def generate_voltage_data(self, robot_state):
+        fracpart, wholepart = math.modf(robot_state.robot_voltage)
+        wholepart = int(wholepart)
+        fracpart = int(fracpart * 255)
+
+        if wholepart > 255 or wholepart < 0:
+            wholepart = 255
+        if fracpart > 254 or fracpart < 0:
+            fracpart = 254
         
+        return (wholepart, fracpart)
+
+    def generate_request_data(self):
+        if self.did_request_time:
+            return self.REQUEST_TIMEDATA
+        else:
+            return 0x00
+
+    def generate_robot_packet(self, robot_state, packet_mode):
+        packet = [0] * 8
+        # Don't know what the first 3 bytes represent, so leave them as 0x00
+        packet[0:3] = [0x00] * 3
+
+        packet[3] = self.generate_control_code(robot_state)
+        packet[4] = self.generate_status_code(robot_state)
+        packet[5:7] = self.generate_voltage_data(robot_state)
+        packet[7] = self.generate_request_data() # request current time & date
+
+        if packet_mode is "CAN_INFO":
+            pass
+        elif packet_mode is "CPU_INFO":
+            pass
+        elif packet_mode is "RAM_INFO":
+            pass
+        elif packet_mode is "DISK_INFO":
+            pass
+
+        return bytearray(packet)
 
             
