@@ -1,6 +1,7 @@
 import socket
 import protocol
 import robotstate
+import watchdog
 
 class Communicator:
     def __init__(self, protocol, listen_ip="0.0.0.0", listen_port=1110):
@@ -12,6 +13,12 @@ class Communicator:
         self.listen_socket.bind((self.listen_ip, self.listen_port))
 
         self.robot_state = robotstate.RobotState()
+
+        self.connection_watchdog = watchdog.Watchdog(50, 1000, self.connection_timeout)
+    
+    def connection_timeout(self):
+        print("No coms")
+        self.robot_state.control_enabled = False
 
     def connect_ds(self, ds_ip, ds_port=1150):
         self.send_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -25,7 +32,10 @@ class Communicator:
             return
         control_data, request, station_data, joy_data = ds_packet
 
-        print(joy_data[0]["axes"])
+        self.connection_watchdog.reset()
+
+        if len(joy_data) > 0:
+            print(joy_data[0]["axes"])
 
         self.robot_state.update_controldata(control_data)
         self.robot_state.update_stationdata(station_data)
